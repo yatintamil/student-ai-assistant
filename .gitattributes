@@ -1,0 +1,27 @@
+# Auto detect text files
+* text=auto
+
+# Dart
+*.dart text
+
+# YAML
+*.yaml text
+*.yml text
+
+# Markdown
+*.md text
+
+# JSON
+*.json text
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.svg text
+
+# Fonts
+*.ttf binary
+*.otf binary

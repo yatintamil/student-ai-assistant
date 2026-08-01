@@ -1,0 +1,31 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+
+linter:
+  rules:
+    # Style
+    prefer_single_quotes: true
+    require_trailing_commas: true
+    sort_constructors_first: true
+    sort_pub_dependencies: true
+    directives_ordering: true
+
+    # Performance
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_const_declarations: true
+    avoid_unnecessary_containers: true
+
+    # Clean Code
+    always_declare_return_types: true
+    avoid_print: true
+    unnecessary_lambdas: true
+    unnecessary_parenthesis: true
+
+    # Safety
+    cancel_subscriptions: true
+    close_sinks: true
