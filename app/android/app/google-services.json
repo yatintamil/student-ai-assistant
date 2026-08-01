@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "61504972008",
+    "project_id": "student-ai-assistant-dc9a8",
+    "storage_bucket": "student-ai-assistant-dc9a8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:61504972008:android:08382ee656f3719cda555d",
+        "android_client_info": {
+          "package_name": "com.yatin_tamilmani.student_ai_assistant"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "61504972008-kv55j8d5vgsdsobp1lot7a45gsen0hq8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yatin_tamilmani.student_ai_assistant",
+            "certificate_hash": "9592da9274998ec2436dd7bea5ee0794fb9a03e8"
+          }
+        },
+        {
+          "client_id": "61504972008-3oabgib0npmp5sof0lkofvreb6r0hul6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCB4aYgxDzy6qEe0I43PV7qzUHPKe4J-z4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "61504972008-3oabgib0npmp5sof0lkofvreb6r0hul6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

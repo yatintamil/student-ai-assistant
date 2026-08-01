@@ -1,21 +1,20 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-void main() {
-  runApp(const StudentAiAssistantApp());
-}
+import 'app.dart';
+import 'firebase_options.dart';
 
-class StudentAiAssistantApp extends StatelessWidget {
-  const StudentAiAssistantApp({super.key});
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Center(
-          child: Text('Student AI Assistant'),
-        ),
-      ),
-    );
-  }
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  runApp(
+    const ProviderScope(
+      child: StudentAIAssistantApp(),
+    ),
+  );
 }
