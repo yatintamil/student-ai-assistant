@@ -20,7 +20,7 @@ class ForgotPasswordPage extends ConsumerStatefulWidget {
 
 /// Holds the transient forgot-password form state.
 class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
-  static const RegExp _emailPattern =
+  static final RegExp _emailPattern =
       RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 
   final _formKey = GlobalKey<FormState>();
