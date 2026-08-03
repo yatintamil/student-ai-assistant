@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../providers/auth_providers.dart';
 import '../states/auth_state.dart';
 
 /// The single source of truth for authentication state.
@@ -15,19 +16,34 @@ import '../states/auth_state.dart';
 /// It intentionally depends only on [AuthRepository] and [AuthState]. It never
 /// touches Firebase, Firestore, UI classes, or performs navigation, keeping
 /// the presentation layer decoupled from the underlying infrastructure.
+///
+/// ## Riverpod 3
+///
+/// This controller follows the official Riverpod 3 [Notifier] pattern: it has
+/// a zero-argument constructor and resolves its dependencies inside [build]
+/// via [Ref.read]. The [AuthRepository] is read from [authRepositoryProvider]
+/// rather than being injected through the constructor, so the controller can
+/// be exposed as a [NotifierProvider] by [authControllerProvider].
 class AuthController extends Notifier<AuthState> {
-  /// Creates an [AuthController] that delegates authentication operations to
-  /// the provided [repository].
+  /// The auth data source, resolved from [authRepositoryProvider] during
+  /// [build].
   ///
-  /// [repository] is the auth data source. It is injected rather than created
-  /// internally so the controller can be tested with a fake repository and
-  /// stays independent of the concrete implementation.
-  AuthController(this._repository);
+  /// It is read once during initialization so the controller delegates all
+  /// authentication operations to the repository abstraction without ever
+  /// touching Firebase or the data layer directly.
+  late AuthRepository _repository;
 
-  final AuthRepository _repository;
-
+  /// Initializes the controller with the initial [AuthState.initial] state
+  /// and resolves the [AuthRepository] from the provider graph.
+  ///
+  /// [Ref.read] is used (rather than [Ref.watch]) because the repository is a
+  /// stable singleton that never changes; reading it during [build] keeps the
+  /// controller decoupled from the concrete repository implementation.
   @override
-  AuthState build() => AuthState.initial();
+  AuthState build() {
+    _repository = ref.read(authRepositoryProvider);
+    return AuthState.initial();
+  }
 
   /// Signs the user in with their Google account.
   ///
