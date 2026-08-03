@@ -3,36 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_providers.dart';
 
-/// Displays the application startup screen while the current session loads.
+/// Displays the application startup screen while session restoration runs.
 ///
-/// This page observes authentication state but intentionally does not perform
-/// navigation. Routing will be added once the destination pages are ready.
-class SplashPage extends ConsumerStatefulWidget {
+/// GoRouter owns authentication redirects; this page only renders the loading
+/// state and never initiates navigation or authentication operations.
+class SplashPage extends ConsumerWidget {
   /// Creates the splash page.
   const SplashPage({super.key});
 
   @override
-  ConsumerState<SplashPage> createState() => _SplashPageState();
-}
-
-/// Holds the one-time startup lifecycle for [SplashPage].
-class _SplashPageState extends ConsumerState<SplashPage> {
-  @override
-  void initState() {
-    super.initState();
-    ref.read(authControllerProvider.notifier).loadCurrentUser();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    // TODO: Authenticated -> Home.
-    // TODO: Unauthenticated -> Login.
-    // TODO: Failure -> Login.
-    // These outcomes remain on this page until navigation is implemented.
     final isLoading = authState.isLoading;
 
     return Scaffold(
