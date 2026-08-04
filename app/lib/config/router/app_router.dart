@@ -11,7 +11,7 @@ import 'route_names.dart';
 /// Provides the application's centralized [GoRouter] configuration.
 abstract final class AppRouter {
   /// Creates the application router and keeps it synchronized with [AuthState].
-  /// df
+  /// 
   /// Authentication redirects are intentionally defined here so that screens
   /// never need to navigate in response to authentication state changes.
   static GoRouter create(Ref ref) {
