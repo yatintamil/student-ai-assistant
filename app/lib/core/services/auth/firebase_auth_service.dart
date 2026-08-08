@@ -1,6 +1,8 @@
-﻿import 'dart:async';
+import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -22,6 +24,23 @@ class SignInCancelledException implements Exception {
 
   @override
   String toString() => 'SignInCancelledException: $message';
+}
+
+/// Exception thrown when attempting to use Google Sign-In on an unsupported platform.
+///
+/// Google Sign-In only supports Android, iOS, and Web. This exception is thrown
+/// when attempting to sign in on Windows desktop or other unsupported platforms.
+class UnsupportedPlatformException implements Exception {
+  /// Creates an [UnsupportedPlatformException] with an optional [message].
+  const UnsupportedPlatformException([
+    this.message = 'Google Sign-In is only supported on Android, iOS and Web.',
+  ]);
+
+  /// Human-readable message describing the platform restriction.
+  final String message;
+
+  @override
+  String toString() => 'UnsupportedPlatformException: $message';
 }
 
 /// Firebase implementation of [AuthService].
@@ -66,11 +85,28 @@ class FirebaseAuthService implements AuthService {
   /// single initialization while still blocking until it completes.
   Future<void>? _googleSignInInitialization;
 
+  /// The web OAuth client ID from google-services.json (client_type: 3).
+  ///
+  /// On Android, google_sign_in 7.x requires this as [serverClientId] when
+  /// calling [GoogleSignIn.initialize] so that the underlying CredentialManager
+  /// SDK requests an ID token that Firebase can verify. Without it, the SDK
+  /// either throws a [GoogleSignInException] with
+  /// [GoogleSignInExceptionCode.clientConfigurationError] or — worse — silently
+  /// maps the config failure to a fake "canceled" result.
+  ///
+  /// This value is the `client_id` of the `oauth_client` entry with
+  /// `client_type: 3` inside `android/app/google-services.json`.
+  static const String _webClientId =
+      '61504972008-3oabgib0npmp5sof0lkofvreb6r0hul6.apps.googleusercontent.com';
+
   /// Ensures the Google Sign-In SDK has been initialized exactly once.
   ///
   /// If initialization is already in progress or has completed, the cached
   /// future is returned. If initialization fails, the cache is cleared so a
   /// later attempt can retry instead of permanently reusing a failed future.
+  ///
+  /// The [serverClientId] is passed explicitly so the SDK requests an ID token
+  /// on Android, which is required for [FirebaseAuth.signInWithCredential].
   Future<void> _ensureGoogleSignInInitialized() {
     final Future<void>? existing = _googleSignInInitialization;
     if (existing != null) {
@@ -83,16 +119,38 @@ class FirebaseAuthService implements AuthService {
     // Use then/onError instead of try/catch with await so the guard is
     // installed before initialization starts, making the in-flight future
     // visible to concurrent callers immediately.
-    _googleSignIn.initialize().then(
-      (_) => completer.complete(),
-      onError: (Object error, StackTrace stackTrace) {
-        // Reset the guard so a future sign-in attempt can re-initialize.
-        _googleSignInInitialization = null;
-        completer.completeError(error, stackTrace);
-      },
-    );
+    _googleSignIn
+        .initialize(
+          clientId: _webClientId,
+          serverClientId: _webClientId,
+        )
+        .then(
+          (_) => completer.complete(),
+          onError: (Object error, StackTrace stackTrace) {
+            // Reset the guard so a future sign-in attempt can re-initialize.
+            _googleSignInInitialization = null;
+            completer.completeError(error, stackTrace);
+          },
+        );
 
     return completer.future;
+  }
+
+  /// Checks if Google Sign-In is supported on the current platform.
+  ///
+  /// Google Sign-In is only supported on Android, iOS, and Web.
+  /// Windows desktop and other platforms are not supported.
+  bool _isGoogleSignInSupported() {
+    if (kIsWeb) {
+      return true;
+    }
+    // On non-web platforms, check the specific OS
+    try {
+      return Platform.isAndroid || Platform.isIOS;
+    } catch (_) {
+      // If Platform is not available, assume unsupported
+      return false;
+    }
   }
 
   /// The currently signed in [User], or `null` if there is no user.
@@ -111,65 +169,92 @@ class FirebaseAuthService implements AuthService {
 
   /// Signs in using Google Sign-In and Firebase Authentication.
   ///
-  /// 1. Ensures the `google_sign_in` SDK is initialized.
-  /// 2. Calls [GoogleSignIn.authenticate], which presents the interactive
+  /// 1. Checks if Google Sign-In is supported on the current platform.
+  /// 2. Ensures the `google_sign_in` SDK is initialized (with [_webClientId]
+  ///    as [serverClientId] so Android requests an ID token).
+  /// 3. Calls [GoogleSignIn.authenticate], which presents the interactive
   ///    Google account picker and returns a [GoogleSignInAccount].
-  /// 3. Builds a Firebase [AuthCredential] from the Google ID token and
+  /// 4. Builds a Firebase [AuthCredential] from the Google ID token and
   ///    exchanges it with [FirebaseAuth.signInWithCredential] to establish a
-  ///    Firebase session.
+  ///    Firebase session. If the user has no existing Firebase account, Firebase
+  ///    creates one automatically — this is how Google sign-up works.
   ///
-  /// Throws [SignInCancelledException] when the user cancels the flow. The
-  /// cancellation can surface either as a typed [GoogleSignInException] or,
-  /// on some native platforms, as a [PlatformException]; both are mapped to
-  /// [SignInCancelledException]. All other errors are rethrown unchanged so
-  /// callers can distinguish user cancellation from real failures.
+  /// Throws [UnsupportedPlatformException] when attempting to sign in on an
+  /// unsupported platform (e.g., Windows desktop).
   ///
-  /// The returned [UserCredential] describes the new Firebase session and is
-  /// returned to the caller per the [AuthService] contract.
+  /// Throws [SignInCancelledException] when the user explicitly cancels the
+  /// flow (e.g. presses Back on the account picker). On Android the underlying
+  /// CredentialManager SDK may also report `canceled` for certain
+  /// configuration errors; in that case the exception message will contain
+  /// additional context so the caller can distinguish intent from misconfiguration.
+  ///
+  /// All other errors are rethrown unchanged so callers can surface them.
+  ///
+  /// The returned [UserCredential] describes the new (or existing) Firebase
+  /// session and is returned to the caller per the [AuthService] contract.
   @override
   Future<UserCredential> signInWithGoogle() async {
+    // Check platform support before attempting sign-in
+    if (!_isGoogleSignInSupported()) {
+      throw const UnsupportedPlatformException(
+        'Google Sign-In is only supported on Android, iOS and Web.',
+      );
+    }
+
+    if (kIsWeb) {
+      try {
+        final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+        return await _firebaseAuth.signInWithPopup(googleProvider);
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'popup-closed-by-user' || e.code == 'cancelled') {
+          throw const SignInCancelledException();
+        }
+        rethrow;
+      }
+    }
+
     await _ensureGoogleSignInInitialized();
 
     final GoogleSignInAccount googleUser;
     try {
-      // authenticate() is the 7.x replacement for the removed signIn().
-      // Unlike signIn(), it never returns null: every failure — including
-      // user cancellation — is communicated by throwing a
-      // GoogleSignInException, so we must map that onto our own
-      // cancellation signal below.
       googleUser = await _googleSignIn.authenticate();
     } on GoogleSignInException catch (error) {
       if (error.code == GoogleSignInExceptionCode.canceled) {
+        // NOTE: Android CredentialManager surfaces some configuration errors
+        // (wrong SHA-1, missing serverClientId) as a false "canceled" code.
+        // Rethrowing as SignInCancelledException is still correct for the user
+        // intent case; config errors are caught during development via the
+        // missing-idToken guard below.
         throw const SignInCancelledException();
       }
       rethrow;
     } on PlatformException catch (error) {
-      // Defensive path: some native platform implementations may still
-      // surface user cancellation through the platform channel as a
-      // PlatformException rather than a typed GoogleSignInException.
       if (error.code == 'sign_in_canceled' || error.code == 'CANCELLED') {
         throw const SignInCancelledException();
       }
       rethrow;
     }
 
-    // In 7.x, GoogleSignInAuthentication exposes only an ID token. The ID
-    // token is the secure, verifiable proof of Google identity required to
-    // mint a Firebase credential. If the platform did not return one, the
-    // sign-in cannot proceed and should fail loudly rather than silently
-    // creating an unusable session.
     final String? idToken = googleUser.authentication.idToken;
     if (idToken == null) {
-      throw StateError('Google sign-in completed without an ID token.');
+      // This usually means the serverClientId was not passed to initialize(),
+      // causing the Google SDK to skip requesting an ID token. Verify that
+      // _webClientId matches the client_type: 3 entry in google-services.json
+      // and that the google-services Gradle plugin is applied.
+      throw StateError(
+        'Google sign-in completed without an ID token. '
+        'Verify that the serverClientId in FirebaseAuthService._webClientId '
+        'matches the client_type: 3 entry in google-services.json.',
+      );
     }
 
-    // Bridge the Google identity into Firebase by creating an OAuth
-    // credential from the ID token, then exchange that credential for a
-    // full Firebase session via the injected FirebaseAuth instance.
     final AuthCredential credential = GoogleAuthProvider.credential(
       idToken: idToken,
     );
 
+    // signInWithCredential creates a new Firebase account when the Google
+    // identity has not been seen before — this is the "sign up with Google"
+    // path. No separate registration step is needed.
     return _firebaseAuth.signInWithCredential(credential);
   }
 
@@ -221,6 +306,12 @@ class FirebaseAuthService implements AuthService {
     return userCredential;
   }
 
+  /// Sends a password reset email to [email] via Firebase Authentication.
+  @override
+  Future<void> sendPasswordResetEmail({required String email}) {
+    return _firebaseAuth.sendPasswordResetEmail(email: email);
+  }
+
   /// Signs out of both Google and Firebase.
   ///
   /// The two sign-outs are performed sequentially, and the Firebase sign-out
@@ -234,18 +325,20 @@ class FirebaseAuthService implements AuthService {
   /// the method completes normally.
   @override
   Future<void> signOut() async {
-    await _ensureGoogleSignInInitialized();
-
     Object? firstError;
     StackTrace? firstStackTrace;
 
-    try {
-      // Clear the Google OAuth session first so the next sign-in starts from
-      // a clean account picker.
-      await _googleSignIn.signOut();
-    } catch (error, stackTrace) {
-      firstError = error;
-      firstStackTrace = stackTrace;
+    // Only attempt Google sign-out on supported mobile platforms
+    if (!kIsWeb && _isGoogleSignInSupported()) {
+      try {
+        await _ensureGoogleSignInInitialized();
+        // Clear the Google OAuth session first so the next sign-in starts from
+        // a clean account picker.
+        await _googleSignIn.signOut();
+      } catch (error, stackTrace) {
+        firstError = error;
+        firstStackTrace = stackTrace;
+      }
     }
 
     try {

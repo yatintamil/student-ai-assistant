@@ -1,24 +1,20 @@
 abstract final class RouteNames {
   const RouteNames._();
 
-  /// The startup route that restores the current authentication session.
   static const String splash = '/';
-
-  /// The sign-in route.
   static const String login = '/login';
-
-  /// The account-registration route.
   static const String register = '/register';
-
-  /// The password-reset route.
   static const String forgotPassword = '/forgot-password';
-
-  /// The onboarding route.
   static const String onboarding = '/onboarding';
-
-  /// The authenticated home route.
   static const String home = '/home';
-
-  /// The application settings route.
+  static const String goals = '/goals';
+  static const String goalDetail = '/goals/:goalId';
+  static const String tasks = '/tasks';
+  static const String habits = '/habits';
+  static const String plan = '/plan';
+  static const String journal = '/journal';
+  static const String aiAssistant = '/ai-assistant';
+  static const String knowledge = '/knowledge';
   static const String settings = '/settings';
+  static const String calendar = '/calendar';
 }

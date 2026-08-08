@@ -18,5 +18,7 @@ abstract interface class AuthService {
     required String password,
   });
 
+  Future<void> sendPasswordResetEmail({required String email});
+
   Future<void> signOut();
 }

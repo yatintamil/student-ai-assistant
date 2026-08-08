@@ -1,6 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
-import '../../domain/entities/user_entity.dart';
+import '../../../../core/services/auth/firebase_auth_service.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../providers/auth_providers.dart';
 import '../states/auth_state.dart';
@@ -10,48 +12,33 @@ import '../states/auth_state.dart';
 /// This controller wraps the [AuthRepository] and exposes the current
 /// [AuthState] to the presentation layer. It owns the state lifecycle for
 /// every authentication operation (sign-in, registration, sign-out, and
-/// session restore) and is the only place that translates repository results
-/// into [AuthState] transitions.
+/// session restore) and is the only place that translates exceptions into
+/// user-facing messages.
 ///
 /// It intentionally depends only on [AuthRepository] and [AuthState]. It never
-/// touches Firebase, Firestore, UI classes, or performs navigation, keeping
-/// the presentation layer decoupled from the underlying infrastructure.
+/// touches Firebase directly, Firestore, UI classes, or performs navigation,
+/// keeping the presentation layer decoupled from the underlying infrastructure.
 ///
 /// ## Riverpod 3
 ///
 /// This controller follows the official Riverpod 3 [Notifier] pattern: it has
 /// a zero-argument constructor and resolves its dependencies inside [build]
-/// via [Ref.read]. The [AuthRepository] is read from [authRepositoryProvider]
-/// rather than being injected through the constructor, so the controller can
-/// be exposed as a [NotifierProvider] by [authControllerProvider].
+/// via [Ref.read].
 class AuthController extends Notifier<AuthState> {
-  /// The auth data source, resolved from [authRepositoryProvider] during
-  /// [build].
-  ///
-  /// It is read once during initialization so the controller delegates all
-  /// authentication operations to the repository abstraction without ever
-  /// touching Firebase or the data layer directly.
   late AuthRepository _repository;
 
-  /// Initializes the controller with the initial [AuthState.initial] state
-  /// and resolves the [AuthRepository] from the provider graph.
-  ///
-  /// [Ref.read] is used (rather than [Ref.watch]) because the repository is a
-  /// stable singleton that never changes; reading it during [build] keeps the
-  /// controller decoupled from the concrete repository implementation.
   @override
   AuthState build() {
     _repository = ref.read(authRepositoryProvider);
-    return AuthState.initial();
+    Future.microtask(loadCurrentUser);
+    return AuthState.loading();
   }
 
+  // ---------------------------------------------------------------------------
+  // Public operations
+  // ---------------------------------------------------------------------------
+
   /// Signs the user in with their Google account.
-  ///
-  /// Sets the state to [AuthState.loading] while the operation is in progress.
-  /// On success, the state becomes [AuthState.authenticated] with the returned
-  /// [UserEntity]. On failure, the state becomes [AuthState.failure] carrying a
-  /// human-readable message. Exceptions are caught here and never exposed to
-  /// the UI.
   Future<void> signInWithGoogle() async {
     state = AuthState.loading();
     try {
@@ -61,14 +48,7 @@ class AuthController extends Notifier<AuthState> {
       state = AuthState.failure(_errorMessage(error));
     }
   }
-
-  /// Signs the user in with an email address and password.
-  ///
-  /// Sets the state to [AuthState.loading] while the operation is in progress.
-  /// On success, the state becomes [AuthState.authenticated] with the returned
-  /// [UserEntity]. On failure, the state becomes [AuthState.failure] carrying a
-  /// human-readable message. Exceptions are caught here and never exposed to
-  /// the UI.
+  /// Signs the user in with [email] and [password].
   Future<void> signInWithEmail(String email, String password) async {
     state = AuthState.loading();
     try {
@@ -83,12 +63,6 @@ class AuthController extends Notifier<AuthState> {
   }
 
   /// Registers a new user with the given [name], [email], and [password].
-  ///
-  /// Sets the state to [AuthState.loading] while the operation is in progress.
-  /// On success, the state becomes [AuthState.authenticated] with the returned
-  /// [UserEntity]. On failure, the state becomes [AuthState.failure] carrying a
-  /// human-readable message. Exceptions are caught here and never exposed to
-  /// the UI.
   Future<void> register(String name, String email, String password) async {
     state = AuthState.loading();
     try {
@@ -103,12 +77,20 @@ class AuthController extends Notifier<AuthState> {
     }
   }
 
+  /// Sends a password reset email to [email].
+  Future<bool> sendPasswordResetEmail(String email) async {
+    state = AuthState.loading();
+    try {
+      await _repository.sendPasswordResetEmail(email);
+      state = AuthState.unauthenticated();
+      return true;
+    } catch (error) {
+      state = AuthState.failure(_errorMessage(error));
+      return false;
+    }
+  }
+
   /// Signs the current user out.
-  ///
-  /// Sets the state to [AuthState.loading] while the operation is in progress.
-  /// On success, the state becomes [AuthState.unauthenticated]. On failure,
-  /// the state becomes [AuthState.failure] carrying a human-readable message.
-  /// Exceptions are caught here and never exposed to the UI.
   Future<void> signOut() async {
     state = AuthState.loading();
     try {
@@ -120,12 +102,6 @@ class AuthController extends Notifier<AuthState> {
   }
 
   /// Restores the currently signed-in user, typically at app startup.
-  ///
-  /// Sets the state to [AuthState.loading] while the operation is in progress.
-  /// If a user is signed in, the state becomes [AuthState.authenticated]. If
-  /// no user is signed in, the state becomes [AuthState.unauthenticated]. On
-  /// failure, the state becomes [AuthState.failure] carrying a human-readable
-  /// message. Exceptions are caught here and never exposed to the UI.
   Future<void> loadCurrentUser() async {
     state = AuthState.loading();
     try {
@@ -140,15 +116,93 @@ class AuthController extends Notifier<AuthState> {
     }
   }
 
-  /// Converts an arbitrary exception into a safe, human-readable message.
+  // ---------------------------------------------------------------------------
+  // Error mapping — single place in the app that converts exceptions into
+  // user-facing messages.
+  // ---------------------------------------------------------------------------
+
+  /// Converts an exception into a safe, human-readable message.
   ///
-  /// This prevents raw exception details from leaking to the UI. A generic
-  /// message is returned when the error is not a [String] so callers always
-  /// receive something meaningful.
+  /// [FirebaseAuthException] codes are mapped to specific guidance so users
+  /// understand what went wrong and how to fix it. [SignInCancelledException]
+  /// is silently discarded — a cancelled flow is not an error worth surfacing.
+  /// [UnsupportedPlatformException] is shown to inform users about platform
+  /// limitations. All other exceptions fall back to a generic message.
   String _errorMessage(Object error) {
-    if (error is String) {
-      return error;
+    // User cancelled the Google sign-in sheet — not an error.
+    if (error is SignInCancelledException) return '';
+
+    // Platform not supported for Google Sign-In
+    if (error is UnsupportedPlatformException) {
+      return error.message;
     }
-    return 'Something went wrong. Please try again.';
+
+    // Google Sign-In configuration error
+    if (error is GoogleSignInException) {
+      return 'Google Sign-In is not configured correctly. Verify the OAuth client IDs and Android SHA-1/SHA-256 fingerprints in Firebase.';
+    }
+
+    // Firebase Authentication errors
+    if (error is FirebaseAuthException) {
+      final mapped = _mapFirebaseCode(error.code);
+      if (mapped.isNotEmpty) return mapped;
+      return error.message ?? 'Authentication error (${error.code}).';
+    }
+
+    // State errors from service layer
+    if (error is StateError) {
+      return error.message;
+    }
+
+    // String errors
+    if (error is String) return error;
+
+    return 'Authentication failed: $error';
+  }
+
+  /// Maps a Firebase Authentication error code to a friendly message.
+  static String _mapFirebaseCode(String code) {
+    return switch (code) {
+      // ── Email / password ──────────────────────────────────────────────────
+      'invalid-email' => 'That email address is not valid.',
+      'user-not-found' =>
+        'No account found for that email. Please check the address or create an account.',
+      'wrong-password' => 'Incorrect password. Please try again.',
+      'user-disabled' =>
+        'This account has been disabled. Please contact support.',
+      'email-already-in-use' =>
+        'An account with that email already exists. Try signing in instead.',
+      'weak-password' =>
+        'Password is too weak. Use at least 8 characters with a mix of letters and numbers.',
+      'requires-recent-login' =>
+        'Please sign in again to continue with this action.',
+      'credential-already-in-use' =>
+        'This credential is already linked to another account.',
+      // ── Google / OAuth ────────────────────────────────────────────────────
+      'popup-closed-by-user' => '',  // Silent — user chose to close the popup.
+      'cancelled' => '', // Silent — user cancelled.
+      'popup-blocked' =>
+        'The sign-in popup was blocked by the browser. Please allow popups and try again.',
+      'unauthorized-domain' =>
+        'This domain is not authorized in Firebase Console. Add your current domain (e.g. localhost) in Firebase Auth -> Settings -> Authorized domains.',
+      'account-exists-with-different-credential' =>
+        'An account already exists with the same email but a different sign-in method.',
+      'operation-not-allowed' =>
+        'Google sign-in is not enabled for this Firebase project. Enable the Google provider in Firebase Authentication.',
+      'configuration-not-found' =>
+        'Google sign-in is not configured for this Firebase project. Check the OAuth configuration and try again.',
+      'invalid-credential' =>
+        'Google sign-in could not verify this credential. Check the app OAuth configuration and try again.',
+      'app-not-authorized' =>
+        'This app is not authorized to use Google sign-in. Check the Firebase and OAuth configuration.',
+      // ── Network ───────────────────────────────────────────────────────────
+      'network-request-failed' =>
+        'Network error. Please check your connection and try again.',
+      // ── Rate limiting ─────────────────────────────────────────────────────
+      'too-many-requests' =>
+        'Too many attempts. Please wait a moment before trying again.',
+      // ── Fallback ──────────────────────────────────────────────────────────
+      _ => '',
+    };
   }
 }

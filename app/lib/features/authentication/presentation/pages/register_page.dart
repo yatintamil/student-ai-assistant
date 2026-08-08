@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_providers.dart';
+import '../widgets/auth_error_banner.dart';
 
 /// Displays the responsive account-registration interface.
 ///
@@ -49,6 +50,12 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading;
+
+    // errorMessage is '' for silent cancellations; only show the banner
+    // when there is a real, non-empty message to display.
+    final errorMessage = authState.errorMessage;
+    final hasError = errorMessage != null && errorMessage.isNotEmpty;
+
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -97,6 +104,13 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 32),
+
+                        // ── Error banner ──────────────────────────────────
+                        if (hasError) ...[
+                          AuthErrorBanner(message: errorMessage),
+                          const SizedBox(height: 16),
+                        ],
+
                         TextFormField(
                           controller: _nameController,
                           enabled: !isLoading,
@@ -192,11 +206,11 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                           children: <Widget>[
                             Text('Already have an account?'),
                             SizedBox(width: 4),
-                            TextButton(
-                              onPressed: null,
-                              child: Text('Sign In'),
-                            ),
                           ],
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Sign In'),
                         ),
                       ],
                     ),

@@ -92,6 +92,12 @@ class AuthRepositoryImpl implements AuthRepository {
     return _mapCredentialToEntity(credential);
   }
 
+  /// Sends a password reset email to [email].
+  @override
+  Future<void> sendPasswordResetEmail(String email) {
+    return _authService.sendPasswordResetEmail(email: email);
+  }
+
   /// Signs the current user out of the application.
   ///
   /// Delegates directly to [AuthService.signOut], which clears both the

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../config/router/route_names.dart';
 import '../providers/auth_providers.dart';
+import '../widgets/auth_error_banner.dart';
 
 /// Displays the responsive sign-in interface for Student AI Assistant.
 ///
@@ -16,7 +19,6 @@ class LoginPage extends ConsumerStatefulWidget {
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-/// Holds the transient input state required by [LoginPage].
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
@@ -31,9 +33,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   void _signInWithEmail() {
     final isFormValid = _formKey.currentState?.validate() ?? false;
-    if (!isFormValid) {
-      return;
-    }
+    if (!isFormValid) return;
 
     ref.read(authControllerProvider.notifier).signInWithEmail(
           _emailController.text.trim(),
@@ -49,6 +49,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading;
+
+    // errorMessage is '' for silent cancellations (user closed the sheet).
+    // Only render the banner when the message is non-empty.
+    final errorMessage = authState.errorMessage;
+    final hasError =
+        errorMessage != null && errorMessage.isNotEmpty;
+
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -56,7 +63,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final horizontalPadding = constraints.maxWidth >= 600 ? 40.0 : 24.0;
+            final horizontalPadding =
+                constraints.maxWidth >= 600 ? 40.0 : 24.0;
 
             return Center(
               child: SingleChildScrollView(
@@ -71,6 +79,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
+                        // ── Branding ──────────────────────────────────────
                         Center(
                           child: CircleAvatar(
                             radius: 36,
@@ -96,15 +105,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 40),
+                        const SizedBox(height: 32),
+
+                        // ── Error banner ──────────────────────────────────
+                        if (hasError) ...[
+                          AuthErrorBanner(message: errorMessage),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // ── Google sign-in ────────────────────────────────
                         OutlinedButton.icon(
-                          onPressed: isLoading
-                              ? null
-                              : _signInWithGoogle,
+                          onPressed: isLoading ? null : _signInWithGoogle,
                           icon: const Icon(Icons.g_mobiledata),
                           label: const Text('Continue with Google'),
                         ),
                         const SizedBox(height: 24),
+
+                        // ── Divider ───────────────────────────────────────
                         Row(
                           children: <Widget>[
                             const Expanded(child: Divider()),
@@ -123,6 +140,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ],
                         ),
                         const SizedBox(height: 24),
+
+                        // ── Email / password ──────────────────────────────
                         TextFormField(
                           controller: _emailController,
                           enabled: !isLoading,
@@ -147,7 +166,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           enabled: !isLoading,
                           obscureText: true,
                           textInputAction: TextInputAction.done,
-                          autofillHints: const <String>[AutofillHints.password],
+                          autofillHints: const <String>[
+                            AutofillHints.password,
+                          ],
                           onFieldSubmitted:
                               isLoading ? null : (_) => _signInWithEmail(),
                           decoration: const InputDecoration(
@@ -161,14 +182,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             return null;
                           },
                         ),
-                        const Align(
+                        Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: null,
-                            child: Text('Forgot Password?'),
+                            onPressed: () =>
+                                context.push(RouteNames.forgotPassword),
+                            child: const Text('Forgot Password?'),
                           ),
                         ),
                         const SizedBox(height: 8),
+
+                        // ── Submit ────────────────────────────────────────
                         FilledButton(
                           onPressed: isLoading ? null : _signInWithEmail,
                           child: isLoading
@@ -182,9 +206,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               : const Text('Sign In'),
                         ),
                         const SizedBox(height: 16),
-                        const TextButton(
-                          onPressed: null,
-                          child: Text('Create Account'),
+                        TextButton(
+                          onPressed: () => context.push(RouteNames.register),
+                          child: const Text('Create Account'),
                         ),
                       ],
                     ),
@@ -198,3 +222,4 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 }
+

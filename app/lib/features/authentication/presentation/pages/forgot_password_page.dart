@@ -32,17 +32,38 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     super.dispose();
   }
 
-  void _sendResetLink() {
+  Future<void> _sendResetLink() async {
     final isFormValid = _formKey.currentState?.validate() ?? false;
     if (!isFormValid) {
       return;
     }
 
-    // TODO(authentication): Once AuthController exposes password reset,
-    // integrate it here through:
-    // ref.read(authControllerProvider.notifier).<reset-password-method>(
-    //   _emailController.text.trim(),
-    // );
+    final email = _emailController.text.trim();
+    final success = await ref
+        .read(authControllerProvider.notifier)
+        .sendPasswordResetEmail(email);
+
+    if (!mounted) return;
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Password reset email sent to $email.'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
+      Navigator.of(context).pop();
+    } else {
+      final errorMessage = ref.read(authControllerProvider).errorMessage;
+      if (errorMessage != null && errorMessage.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -135,9 +156,9 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
                               : const Text('Send Reset Link'),
                         ),
                         const SizedBox(height: 16),
-                        const TextButton(
-                          onPressed: null,
-                          child: Text('Back to Sign In'),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Back to Sign In'),
                         ),
                       ],
                     ),
